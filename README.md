@@ -52,11 +52,10 @@ func main() {
 }
 ```
 
-::: {align="center"}
+<div align="center"> 
 <img src="https://github.com/user-attachments/assets/294a8e81-b999-4101-bf7f-efd9da26c54e" alt="plyGO example" width="293" style="border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-top:1rem;"/>
-
 <p><em>Console output</em></p>
-:::
+</div>
 
 ## Table Visualization
 
