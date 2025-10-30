@@ -72,11 +72,10 @@ func main() {
             plygo.WithStyle("rounded"))
 ```
 
-::: {align="center"}
+<div align="center"> 
 <img src="https://github.com/user-attachments/assets/baf3e38e-f5bb-417c-b20f-4a354b584b0e" alt="plyGO example" width="284" style="border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-top:1rem;"/>
-
 <p><em>Console output</em></p>
-:::
+</div>
 
 ## Integration with goTableView (Compact Version)
 
@@ -120,9 +119,7 @@ func main() {
 }
 ```
 
-Output:
-
-<div align="center"> <img src="" alt="plyGO with goTableView basic example" width="300" 
+<div align="center"> <img src="https://github.com/user-attachments/assets/8a30c562-474b-4a2a-95a2-aa177ed03102" alt="plyGO with goTableView basic example" width="600" 
                          style="border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-top:1rem;">
 <p><em>Rendered GUI table — built directly from Go code.</em></p> 
 </div>
