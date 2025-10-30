@@ -4,82 +4,142 @@ A lightweight, type-safe data manipulation library for Go inspired by dplyr and 
 
 ## Features
 
-- Fluent, chainable API
-- Type-safe operations with generics
-- Position-based data access (R-style with 1-based indexing)
-- **Elegant table visualization with Show()**
-- Clean, readable syntax
-- Zero dependencies
-- High performance
+-   Fluent, chainable API
+-   Type-safe operations with generics
+-   Position-based data access (R-style with 1-based indexing)
+-   **Elegant table visualization with Show()**
+-   Clean, readable syntax
+-   Zero dependencies
+-   High performance
 
 ## Installation
 
-```bash
+``` bash
 go get github.com/mansoldof/plyGO
 ```
 
 ## Quick Start
 
-```go
+``` go
 package main
 
 import "github.com/mansoldof/plyGO"
 
 type Person struct {
-	Name   string
-	Age    int
-	City   string
-	Salary float64
+    Name   string
+    Age    int
+    City   string
+    Salary float64
 }
 
 func main() {
 
-	people := []Person{
-		{"Frank", 43, "FL", 88000},
-		{"Alice", 30, "NYC", 75000},
-		{"Bob", 25, "LA", 60000},
-		{"Charlie", 35, "NYC", 90000},
-	}
+    people := []Person{
+        {"Frank", 43, "FL", 88000},
+        {"Alice", 30, "NYC", 75000},
+        {"Bob", 25, "LA", 60000},
+        {"Charlie", 35, "NYC", 90000},
+    }
 
-	// Display with elegant formatting
-	plygo.From(people).Show()
+    // Display with elegant formatting
+    plygo.From(people).Show()
 
-	// Filter and show
-	plygo.From(people).
-		Where("Age").GreaterThan(30).
-		Show(plygo.WithTitle("Age > 30"))
+    // Filter and show
+    plygo.From(people).
+        Where("Age").GreaterThan(30).
+        Show(plygo.WithTitle("Age > 30"))
 
 }
 ```
 
-<div align="center"> <img src="https://github.com/user-attachments/assets/294a8e81-b999-4101-bf7f-efd9da26c54e" alt="plyGO example" width="293" 
-                         style="border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-top:1rem;">
-<p><em>Console output</em></p> 
-</div>
+::: {align="center"}
+<img src="https://github.com/user-attachments/assets/294a8e81-b999-4101-bf7f-efd9da26c54e" alt="plyGO example" width="293" style="border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-top:1rem;"/>
+
+<p><em>Console output</em></p>
+:::
 
 ## Table Visualization
 
 ### Basic Usage
 
-```go
-	// Display with elegant formatting
-	plygo.From(people).Show(plygo.WithStyle("rounded"))
+``` go
+    // Display with elegant formatting
+    plygo.From(people).Show(plygo.WithStyle("rounded"))
 
-	// Filter and show
-	plygo.From(people).
-		Where("Salary").LessThan(80000).
-		Show(plygo.WithTitle("Salary < $80,000"),
-			plygo.WithStyle("rounded"))
+    // Filter and show
+    plygo.From(people).
+        Where("Salary").LessThan(80000).
+        Show(plygo.WithTitle("Salary < $80,000"),
+            plygo.WithStyle("rounded"))
 ```
 
-<div align="center"> <img src="https://github.com/user-attachments/assets/baf3e38e-f5bb-417c-b20f-4a354b584b0e" alt="plyGO example" width="284" 
+::: {align="center"}
+<img src="https://github.com/user-attachments/assets/baf3e38e-f5bb-417c-b20f-4a354b584b0e" alt="plyGO example" width="284" style="border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-top:1rem;"/>
+
+<p><em>Console output</em></p>
+:::
+
+## Integration with goTableView (Compact Version)
+
+plyGO integrates seamlessly with [goTableView](https://github.com/mansoldof/goTableView) for GUI visualization. Transform your data with plyGO's fluent API, then display it in a native Windows table viewer.
+
+### Example
+
+``` go
+package main
+
+import (
+    "github.com/mansoldof/plyGO"
+    "github.com/mansoldof/goTableView"
+)
+
+type Person struct {
+    Name   string
+    Age    int
+    City   string
+    Salary float64
+}
+
+func main() {
+    people := []Person{
+        {"Frank", 43, "FL", 88000},
+        {"Alice", 30, "NYC", 75000},
+        {"Bob", 25, "LA", 60000},
+        {"Charlie", 35, "NYC", 90000},
+    }
+
+	// Display initial table
+	gotableview.FromStructs("Initial table", people).Show(false)
+
+    // Filter, sort, and display in GUI
+    result := plygo.From(people).
+        Where("Age").GreaterThan(30).
+        OrderBy("Salary").Desc().
+        Collect()
+
+    gotableview.FromStructs("High Earners", result).Show()
+}
+```
+
+Output:
+
+<div align="center"> <img src="" alt="plyGO with goTableView basic example" width="300" 
                          style="border-radius:12px; box-shadow:0 4px 18px rgba(0,0,0,0.2); margin-top:1rem;">
-<p><em>Console output</em></p> 
+<p><em>Rendered GUI table — built directly from Go code.</em></p> 
 </div>
+
+Install both:
+
+``` bash
+go get github.com/mansoldof/plyGO
+go get github.com/mansoldof/goTableView
+```
+
+**Note**: goTableView is Windows-only. For terminal display, use plyGO's `Show()` method.
 
 ## Table Styles
 
-```go
+``` go
 // Rounded borders
 plygo.From(people).Show(plygo.WithStyle("rounded"))
 
@@ -95,7 +155,7 @@ plygo.From(people).Show(plygo.WithStyle("markdown"))
 
 ## Customization Options
 
-```go
+``` go
 // With title
 plygo.From(people).Show(plygo.WithTitle("Employee Data"))
 
@@ -127,15 +187,15 @@ plygo.From(people).Show(
 
 ### Smart Features
 
-- **Auto-truncation**: Large datasets automatically show first/last rows
-- **Type detection**: Numbers right-aligned, strings left-aligned
-- **Long text handling**: Truncates with "..." when needed
-- **Empty handling**: Graceful display for empty datasets
-- **Works everywhere**: With filters, sorts, selections, and all plyGo operations
+-   **Auto-truncation**: Large datasets automatically show first/last rows
+-   **Type detection**: Numbers right-aligned, strings left-aligned
+-   **Long text handling**: Truncates with "..." when needed
+-   **Empty handling**: Graceful display for empty datasets
+-   **Works everywhere**: With filters, sorts, selections, and all plyGo operations
 
 ### Show Throughout Pipeline
 
-```go
+``` go
 // Display at any point in the pipeline
 plygo.From(people).
     Show(plygo.WithTitle("Original")).
@@ -149,7 +209,7 @@ plygo.From(people).
 
 ### Row Access
 
-```go
+``` go
 // Get specific rows (1-based indexing)
 plygo.From(people).AtRow(1, 3, 5).Collect()
 
@@ -170,7 +230,7 @@ plygo.From(people).Slice(1, -1, 2).Collect()  // Every other row
 
 ### Column Access
 
-```go
+``` go
 // Get specific columns by position
 plygo.From(people).AtCol(1, 3).Collect()      // Name and City
 
@@ -184,7 +244,7 @@ count := plygo.From(people).FieldCount()       // 4
 
 ### Position Tracking
 
-```go
+``` go
 // Get original indices after filtering
 positions := plygo.From(people).
     Where("Age").GreaterThan(30).
@@ -196,7 +256,7 @@ plygo.ShowPositions(positions)
 
 ## Filtering
 
-```go
+``` go
 // AND (implicit)
 Where("Age").GreaterThan(30).
 Where("Active").IsTrue()
@@ -218,7 +278,7 @@ Where("Name").EndsWith("son")
 
 ## Grouping & Aggregation
 
-```go
+``` go
 GroupBy("City").Count()
 GroupBy("City").Sum("Salary")
 GroupBy("City").Avg("Age")
@@ -228,14 +288,14 @@ GroupBy("City").Max("Salary")
 
 ## Sorting
 
-```go
+``` go
 OrderBy("Salary").Desc()
 OrderBy("Age").Asc().ThenBy("Salary").Desc()
 ```
 
 ## Transformation
 
-```go
+``` go
 Transform(func(p Person) Person {
     p.Salary *= 1.1
     return p
@@ -244,14 +304,14 @@ Transform(func(p Person) Person {
 
 ## Examples
 
-- `examples/simple/simple.go` - Basic filtering and operations
-- `examples/positions/positions.go` - Position-based operations
-- **`examples/show/show_examples.go` - Table visualization examples**
+-   `examples/simple/simple.go` - Basic filtering and operations
+-   `examples/positions/positions.go` - Position-based operations
+-   **`examples/show/show_examples.go` - Table visualization examples**
 
 ## Show() Options Reference
 
 | Option | Description | Example |
-|--------|-------------|---------|
+|--------------------|-------------------------------|----------------------|
 | `WithStyle(style)` | Table style: "simple", "rounded", "double", "minimal", "markdown" | `WithStyle("rounded")` |
 | `WithTitle(title)` | Add title above table | `WithTitle("Report")` |
 | `WithRowNumbers(bool)` | Show row numbers | `WithRowNumbers(true)` |
