@@ -319,5 +319,5 @@ Transform(func(p Person) Person {
 | `WithMaxColWidth(n)` | Maximum column width | `WithMaxColWidth(30)` |
 
 ## License
+Apache License 2.0
 
-MIT
