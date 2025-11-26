@@ -1,17 +1,30 @@
 package plygo
 
 import (
-	"math/rand"
+	"math/rand/v2"
 	"reflect"
 	"sort"
 	"strings"
-	"time"
+	"sync"
 )
 
 type Pipeline[T any] struct {
 	data          []T
 	originalIndex []int
+	typeCache     *typeCache
 }
+
+// typeCache stores reflection metadata for performance
+type typeCache struct {
+	fieldNames  []string
+	fieldMap    map[string]int
+	initialized bool
+}
+
+var (
+	typeCacheLock sync.RWMutex
+	typeCaches    = make(map[reflect.Type]*typeCache)
+)
 
 type PositionIndex struct {
 	Rows []int
@@ -35,37 +48,95 @@ func From[T any](data []T) *Pipeline[T] {
 	for i := range indices {
 		indices[i] = i + 1
 	}
-	return &Pipeline[T]{
+	p := &Pipeline[T]{
 		data:          data,
 		originalIndex: indices,
 	}
+	p.initTypeCache()
+	return p
+}
+
+func (p *Pipeline[T]) initTypeCache() {
+	if len(p.data) == 0 {
+		return
+	}
+
+	var zero T
+	typ := reflect.TypeOf(zero)
+	if typ == nil {
+		return
+	}
+
+	// Try to get cached type info
+	typeCacheLock.RLock()
+	cache, exists := typeCaches[typ]
+	typeCacheLock.RUnlock()
+
+	if exists {
+		p.typeCache = cache
+		return
+	}
+
+	// Create new cache
+	typeCacheLock.Lock()
+	defer typeCacheLock.Unlock()
+
+	// Double-check after acquiring write lock
+	if cache, exists := typeCaches[typ]; exists {
+		p.typeCache = cache
+		return
+	}
+
+	cache = &typeCache{
+		fieldMap: make(map[string]int),
+	}
+
+	val := reflect.ValueOf(p.data[0])
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
+
+	if val.Kind() == reflect.Struct {
+		t := val.Type()
+		cache.fieldNames = make([]string, t.NumField())
+		for i := 0; i < t.NumField(); i++ {
+			fieldName := t.Field(i).Name
+			cache.fieldNames[i] = fieldName
+			cache.fieldMap[fieldName] = i
+		}
+		cache.initialized = true
+	}
+
+	typeCaches[typ] = cache
+	p.typeCache = cache
 }
 
 func (p *Pipeline[T]) AtRow(indices ...int) *Pipeline[T] {
-if len(indices) == 0 {
-return &Pipeline[T]{data: []T{}, originalIndex: []int{}}
-}
+	if len(indices) == 0 {
+		return &Pipeline[T]{data: []T{}, originalIndex: []int{}, typeCache: p.typeCache}
+	}
 
-result := make([]T, 0, len(indices))
-resultIdx := make([]int, 0, len(indices))
+	result := make([]T, 0, len(indices))
+	resultIdx := make([]int, 0, len(indices))
 
-for _, idx := range indices {
-pos := p.normalizeIndex(idx)
-if pos >= 0 && pos < len(p.data) {
-result = append(result, p.data[pos])
-resultIdx = append(resultIdx, p.originalIndex[pos])
-}
-}
+	for _, idx := range indices {
+		pos := p.normalizeIndex(idx)
+		if pos >= 0 && pos < len(p.data) {
+			result = append(result, p.data[pos])
+			resultIdx = append(resultIdx, p.originalIndex[pos])
+		}
+	}
 
-return &Pipeline[T]{
-data:          result,
-originalIndex: resultIdx,
-}
+	return &Pipeline[T]{
+		data:          result,
+		originalIndex: resultIdx,
+		typeCache:     p.typeCache,
+	}
 }
 
 func (p *Pipeline[T]) RowRange(start, end int) *Pipeline[T] {
-startPos := p.normalizeIndex(start)
-	
+	startPos := p.normalizeIndex(start)
+
 	var endPos int
 	if end == -1 {
 		endPos = len(p.data)
@@ -73,96 +144,98 @@ startPos := p.normalizeIndex(start)
 		endPos = p.normalizeIndex(end)
 	}
 
-if endPos == -1 {
-endPos = len(p.data)
-}
+	if endPos == -1 {
+		endPos = len(p.data)
+	}
 
-if startPos < 0 {
-startPos = 0
-}
-if endPos > len(p.data) {
-endPos = len(p.data)
-}
-if startPos >= endPos {
-return &Pipeline[T]{data: []T{}, originalIndex: []int{}}
-}
+	if startPos < 0 {
+		startPos = 0
+	}
+	if endPos > len(p.data) {
+		endPos = len(p.data)
+	}
+	if startPos >= endPos {
+		return &Pipeline[T]{data: []T{}, originalIndex: []int{}, typeCache: p.typeCache}
+	}
 
-result := make([]T, endPos-startPos)
-copy(result, p.data[startPos:endPos])
+	result := make([]T, endPos-startPos)
+	copy(result, p.data[startPos:endPos])
 
-resultIdx := make([]int, endPos-startPos)
-copy(resultIdx, p.originalIndex[startPos:endPos])
+	resultIdx := make([]int, endPos-startPos)
+	copy(resultIdx, p.originalIndex[startPos:endPos])
 
-return &Pipeline[T]{
-data:          result,
-originalIndex: resultIdx,
-}
+	return &Pipeline[T]{
+		data:          result,
+		originalIndex: resultIdx,
+		typeCache:     p.typeCache,
+	}
 }
 
 func (p *Pipeline[T]) normalizeIndex(idx int) int {
-if idx > 0 {
-return idx - 1
-}
-if idx < 0 {
-return len(p.data) + idx
-}
-return -1
+	if idx > 0 {
+		return idx - 1
+	}
+	if idx < 0 {
+		return len(p.data) + idx
+	}
+	return -1
 }
 
 func (p *Pipeline[T]) Tail(n int) *Pipeline[T] {
-if n <= 0 {
-return &Pipeline[T]{data: []T{}, originalIndex: []int{}}
-}
-if n >= len(p.data) {
-return p
-}
+	if n <= 0 {
+		return &Pipeline[T]{data: []T{}, originalIndex: []int{}, typeCache: p.typeCache}
+	}
+	if n >= len(p.data) {
+		return p
+	}
 
-start := len(p.data) - n
-result := make([]T, n)
-copy(result, p.data[start:])
+	start := len(p.data) - n
+	result := make([]T, n)
+	copy(result, p.data[start:])
 
-resultIdx := make([]int, n)
-copy(resultIdx, p.originalIndex[start:])
+	resultIdx := make([]int, n)
+	copy(resultIdx, p.originalIndex[start:])
 
-return &Pipeline[T]{
-data:          result,
-originalIndex: resultIdx,
-}
+	return &Pipeline[T]{
+		data:          result,
+		originalIndex: resultIdx,
+		typeCache:     p.typeCache,
+	}
 }
 
 func (p *Pipeline[T]) Sample(n int) *Pipeline[T] {
-if n <= 0 || len(p.data) == 0 {
-return &Pipeline[T]{data: []T{}, originalIndex: []int{}}
-}
-if n >= len(p.data) {
-return p
-}
+	if n <= 0 || len(p.data) == 0 {
+		return &Pipeline[T]{data: []T{}, originalIndex: []int{}, typeCache: p.typeCache}
+	}
+	if n >= len(p.data) {
+		return p
+	}
 
-rand.Seed(time.Now().UnixNano())
-indices := rand.Perm(len(p.data))[:n]
-sort.Ints(indices)
+	indices := rand.Perm(len(p.data))[:n]
+	sort.Ints(indices)
 
-result := make([]T, n)
-resultIdx := make([]int, n)
+	result := make([]T, n)
+	resultIdx := make([]int, n)
 
-for i, idx := range indices {
-result[i] = p.data[idx]
-resultIdx[i] = p.originalIndex[idx]
-}
+	for i, idx := range indices {
+		result[i] = p.data[idx]
+		resultIdx[i] = p.originalIndex[idx]
+	}
 
-return &Pipeline[T]{
-data:          result,
-originalIndex: resultIdx,
-}
+	return &Pipeline[T]{
+		data:          result,
+		originalIndex: resultIdx,
+		typeCache:     p.typeCache,
+	}
 }
 
 func (p *Pipeline[T]) Slice(start, end, step int) *Pipeline[T] {
-if step == 0 {
-step = 1
-}
+	if step == 0 {
+		step = 1
+	}
 
-startPos := p.normalizeIndex(start)
-	
+	startPos := p.normalizeIndex(start)
+
 	var endPos int
 	if end == -1 {
 		endPos = len(p.data)
@@ -170,112 +243,118 @@ startPos := p.normalizeIndex(start)
 		endPos = p.normalizeIndex(end)
 	}
 
-if endPos == -1 {
-endPos = len(p.data)
-}
+	if endPos == -1 {
+		endPos = len(p.data)
+	}
 
-if startPos < 0 {
-startPos = 0
-}
-if endPos > len(p.data) {
-endPos = len(p.data)
-}
+	if startPos < 0 {
+		startPos = 0
+	}
+	if endPos > len(p.data) {
+		endPos = len(p.data)
+	}
 
-result := make([]T, 0)
-resultIdx := make([]int, 0)
+	result := make([]T, 0)
+	resultIdx := make([]int, 0)
 
-if step > 0 {
-for i := startPos; i < endPos; i += step {
-result = append(result, p.data[i])
-resultIdx = append(resultIdx, p.originalIndex[i])
-}
-} else {
-for i := endPos - 1; i >= startPos; i += step {
-result = append(result, p.data[i])
-resultIdx = append(resultIdx, p.originalIndex[i])
-}
-}
+	if step > 0 {
+		for i := startPos; i < endPos; i += step {
+			result = append(result, p.data[i])
+			resultIdx = append(resultIdx, p.originalIndex[i])
+		}
+	} else {
+		for i := endPos - 1; i >= startPos; i += step {
+			result = append(result, p.data[i])
+			resultIdx = append(resultIdx, p.originalIndex[i])
+		}
+	}
 
-return &Pipeline[T]{
-data:          result,
-originalIndex: resultIdx,
-}
+	return &Pipeline[T]{
+		data:          result,
+		originalIndex: resultIdx,
+	}
 }
 
 func (p *Pipeline[T]) Positions() PositionIndex {
-return PositionIndex{
-Rows: p.originalIndex,
-Cols: []int{},
-}
+	return PositionIndex{
+		Rows: p.originalIndex,
+		Cols: []int{},
+	}
 }
 
 func (p *Pipeline[T]) Which() []int {
-return p.originalIndex
+	return p.originalIndex
 }
 
 func (p *Pipeline[T]) FieldNames() []string {
-if len(p.data) == 0 {
-return []string{}
-}
+	if len(p.data) == 0 {
+		return []string{}
+	}
 
-val := reflect.ValueOf(p.data[0])
-if val.Kind() == reflect.Map {
-keys := val.MapKeys()
-result := make([]string, len(keys))
-for i, key := range keys {
-result[i] = key.String()
-}
-sort.Strings(result)
-return result
-}
+	// Use cache if available
+	if p.typeCache != nil && p.typeCache.initialized {
+		return p.typeCache.fieldNames
+	}
 
-if val.Kind() == reflect.Ptr {
-val = val.Elem()
-}
+	// Fallback for maps and other types
+	val := reflect.ValueOf(p.data[0])
+	if val.Kind() == reflect.Map {
+		keys := val.MapKeys()
+		result := make([]string, len(keys))
+		for i, key := range keys {
+			result[i] = key.String()
+		}
+		sort.Strings(result)
+		return result
+	}
 
-if val.Kind() != reflect.Struct {
-return []string{}
-}
+	if val.Kind() == reflect.Ptr {
+		val = val.Elem()
+	}
 
-typ := val.Type()
-result := make([]string, typ.NumField())
-for i := 0; i < typ.NumField(); i++ {
-result[i] = typ.Field(i).Name
-}
+	if val.Kind() != reflect.Struct {
+		return []string{}
+	}
 
-return result
+	typ := val.Type()
+	result := make([]string, typ.NumField())
+	for i := 0; i < typ.NumField(); i++ {
+		result[i] = typ.Field(i).Name
+	}
+
+	return result
 }
 
 func (p *Pipeline[T]) FieldCount() int {
-return len(p.FieldNames())
+	return len(p.FieldNames())
 }
 
 func (p *Pipeline[T]) AtCol(indices ...int) *Selection[T] {
-if len(indices) == 0 {
-return &Selection[T]{pipeline: p, fields: []string{}}
-}
+	if len(indices) == 0 {
+		return &Selection[T]{pipeline: p, fields: []string{}}
+	}
 
-fieldNames := p.FieldNames()
-selectedFields := make([]string, 0, len(indices))
+	fieldNames := p.FieldNames()
+	selectedFields := make([]string, 0, len(indices))
 
-for _, idx := range indices {
-pos := p.normalizeIndex(idx)
-if pos >= 0 && pos < len(fieldNames) {
-selectedFields = append(selectedFields, fieldNames[pos])
-}
-}
+	for _, idx := range indices {
+		pos := p.normalizeIndex(idx)
+		if pos >= 0 && pos < len(fieldNames) {
+			selectedFields = append(selectedFields, fieldNames[pos])
+		}
+	}
 
-return &Selection[T]{
-pipeline: p,
-fields:   selectedFields,
-}
+	return &Selection[T]{
+		pipeline: p,
+		fields:   selectedFields,
+	}
 }
 
 func (p *Pipeline[T]) ColRange(start, end int) *Selection[T] {
-fieldNames := p.FieldNames()
+	fieldNames := p.FieldNames()
 
-startPos := p.normalizeIndex(start)
-	
+	startPos := p.normalizeIndex(start)
+
 	var endPos int
 	if end == -1 {
 		endPos = len(fieldNames)
@@ -283,27 +362,27 @@ startPos := p.normalizeIndex(start)
 		endPos = p.normalizeIndex(end)
 	}
 
-if endPos == -1 {
-endPos = len(fieldNames)
-}
+	if endPos == -1 {
+		endPos = len(fieldNames)
+	}
 
-if startPos < 0 {
-startPos = 0
-}
-if endPos > len(fieldNames) {
-endPos = len(fieldNames)
-}
-if startPos >= endPos {
-return &Selection[T]{pipeline: p, fields: []string{}}
-}
+	if startPos < 0 {
+		startPos = 0
+	}
+	if endPos > len(fieldNames) {
+		endPos = len(fieldNames)
+	}
+	if startPos >= endPos {
+		return &Selection[T]{pipeline: p, fields: []string{}}
+	}
 
-selectedFields := make([]string, endPos-startPos)
-copy(selectedFields, fieldNames[startPos:endPos])
+	selectedFields := make([]string, endPos-startPos)
+	copy(selectedFields, fieldNames[startPos:endPos])
 
-return &Selection[T]{
-pipeline: p,
-fields:   selectedFields,
-}
+	return &Selection[T]{
+		pipeline: p,
+		fields:   selectedFields,
+	}
 }
 
 func (p *Pipeline[T]) Where(field string) *Condition[T] {
@@ -629,63 +708,53 @@ func (c *Condition[T]) Or(field string) *Condition[T] {
 }
 
 func (c *Condition[T]) Where(field string) *Condition[T] {
-	filtered := c.execute()
-	// Track original indices through filter chain
-	indices := make([]int, 0, len(filtered))
-	for i, item := range c.pipeline.data {
-		for _, fitem := range filtered {
-			if reflect.DeepEqual(item, fitem) {
-				indices = append(indices, c.pipeline.originalIndex[i])
-				break
-			}
-		}
-	}
+	filtered, indices := c.executeWithIndices()
 	return &Condition[T]{
-		pipeline: &Pipeline[T]{data: filtered, originalIndex: indices},
+		pipeline: &Pipeline[T]{data: filtered, originalIndex: indices, typeCache: c.pipeline.typeCache},
 		field:    field,
 		filters:  make([]filter[T], 0),
 	}
 }
 
 func (c *Condition[T]) Select(fields ...string) *Selection[T] {
-	filtered := c.execute()
+	filtered, indices := c.executeWithIndices()
 	return &Selection[T]{
-		pipeline: &Pipeline[T]{data: filtered},
+		pipeline: &Pipeline[T]{data: filtered, originalIndex: indices, typeCache: c.pipeline.typeCache},
 		fields:   fields,
 	}
 }
 
 func (c *Condition[T]) OrderBy(field string) *Sorter[T] {
-	filtered := c.execute()
+	filtered, indices := c.executeWithIndices()
 	return &Sorter[T]{
-		pipeline: &Pipeline[T]{data: filtered},
+		pipeline: &Pipeline[T]{data: filtered, originalIndex: indices, typeCache: c.pipeline.typeCache},
 		sorts:    []sortField{{field: field, desc: false}},
 	}
 }
 
 func (c *Condition[T]) GroupBy(field string) *Grouping[T] {
-	filtered := c.execute()
+	filtered, indices := c.executeWithIndices()
 	return &Grouping[T]{
-		pipeline: &Pipeline[T]{data: filtered},
+		pipeline: &Pipeline[T]{data: filtered, originalIndex: indices, typeCache: c.pipeline.typeCache},
 		field:    field,
 	}
 }
 
 func (c *Condition[T]) Transform(fn func(T) T) *Pipeline[T] {
-	filtered := c.execute()
-	p := &Pipeline[T]{data: filtered}
+	filtered, indices := c.executeWithIndices()
+	p := &Pipeline[T]{data: filtered, originalIndex: indices, typeCache: c.pipeline.typeCache}
 	return p.Transform(fn)
 }
 
 func (c *Condition[T]) Limit(n int) *Pipeline[T] {
-	filtered := c.execute()
-	p := &Pipeline[T]{data: filtered}
+	filtered, indices := c.executeWithIndices()
+	p := &Pipeline[T]{data: filtered, originalIndex: indices, typeCache: c.pipeline.typeCache}
 	return p.Limit(n)
 }
 
 func (c *Condition[T]) Distinct(field string) *Pipeline[T] {
-	filtered := c.execute()
-	p := &Pipeline[T]{data: filtered}
+	filtered, indices := c.executeWithIndices()
+	p := &Pipeline[T]{data: filtered, originalIndex: indices, typeCache: c.pipeline.typeCache}
 	return p.Distinct(field)
 }
 
@@ -696,26 +765,26 @@ func (c *Condition[T]) Collect() []T {
 func (c *Condition[T]) Positions() PositionIndex {
 	// Execute filters to get matching items
 	filtered := c.execute()
-	
+
 	if len(filtered) == 0 {
 		return PositionIndex{Rows: []int{}, Cols: []int{}}
 	}
-	
+
 	// Build a map of filtered items for matching
 	filteredMap := make(map[any]bool)
 	for _, item := range filtered {
 		filteredMap[item] = true
 	}
-	
+
 	// Find original indices of filtered items
 	indices := make([]int, 0, len(filtered))
 	for i, item := range c.pipeline.data {
 		if filteredMap[item] {
 			indices = append(indices, c.pipeline.originalIndex[i])
-			delete(filteredMap, item)  // Remove to handle duplicates correctly
+			delete(filteredMap, item) // Remove to handle duplicates correctly
 		}
 	}
-	
+
 	return PositionIndex{Rows: indices, Cols: []int{}}
 }
 
@@ -724,17 +793,30 @@ func (c *Condition[T]) Which() []int {
 }
 
 func (c *Condition[T]) execute() []T {
+	result, _ := c.executeWithIndices()
+	return result
+}
+
+func (c *Condition[T]) executeWithIndices() ([]T, []int) {
 	if len(c.filters) == 0 {
-		return c.pipeline.data
+		return c.pipeline.data, c.pipeline.originalIndex
 	}
 
-	result := make([]T, 0)
-	for _, item := range c.pipeline.data {
+	// Pre-allocate with estimated capacity
+	estimatedSize := len(c.pipeline.data) / 2
+	if estimatedSize < 16 {
+		estimatedSize = 16
+	}
+	result := make([]T, 0, estimatedSize)
+	indices := make([]int, 0, estimatedSize)
+
+	for i, item := range c.pipeline.data {
 		if c.evaluate(item) {
 			result = append(result, item)
+			indices = append(indices, c.pipeline.originalIndex[i])
 		}
 	}
-	return result
+	return result, indices
 }
 
 func (c *Condition[T]) evaluate(item T) bool {
@@ -904,7 +986,7 @@ func (s *Selection[T]) Collect() []map[string]any {
 func (s *Selection[T]) Positions() PositionIndex {
 	allFields := s.pipeline.FieldNames()
 	colIndices := make([]int, 0, len(s.fields))
-	
+
 	for _, field := range s.fields {
 		for i, f := range allFields {
 			if f == field {
@@ -913,7 +995,7 @@ func (s *Selection[T]) Positions() PositionIndex {
 			}
 		}
 	}
-	
+
 	return PositionIndex{
 		Rows: s.pipeline.originalIndex,
 		Cols: colIndices,
@@ -933,7 +1015,6 @@ func (s *Selection[T]) RowRange(start, end int) *Selection[T] {
 		fields:   s.fields,
 	}
 }
-
 
 func (s *Selection[T]) execute() []map[string]any {
 	result := make([]map[string]any, len(s.pipeline.data))
@@ -1051,31 +1132,31 @@ func (s *Sorter[T]) ThenBy(field string) *Sorter[T] {
 }
 
 func (s *Sorter[T]) Where(field string) *Condition[T] {
-	sorted := s.execute()
+	sorted, indices := s.executeWithIndices()
 	return &Condition[T]{
-		pipeline: &Pipeline[T]{data: sorted},
+		pipeline: &Pipeline[T]{data: sorted, originalIndex: indices, typeCache: s.pipeline.typeCache},
 		field:    field,
 		filters:  make([]filter[T], 0),
 	}
 }
 
 func (s *Sorter[T]) Select(fields ...string) *Selection[T] {
-	sorted := s.execute()
+	sorted, indices := s.executeWithIndices()
 	return &Selection[T]{
-		pipeline: &Pipeline[T]{data: sorted},
+		pipeline: &Pipeline[T]{data: sorted, originalIndex: indices, typeCache: s.pipeline.typeCache},
 		fields:   fields,
 	}
 }
 
 func (s *Sorter[T]) Limit(n int) *Pipeline[T] {
-	sorted := s.execute()
-	p := &Pipeline[T]{data: sorted}
+	sorted, indices := s.executeWithIndices()
+	p := &Pipeline[T]{data: sorted, originalIndex: indices, typeCache: s.pipeline.typeCache}
 	return p.Limit(n)
 }
 
 func (s *Sorter[T]) Skip(n int) *Pipeline[T] {
-	sorted := s.execute()
-	p := &Pipeline[T]{data: sorted}
+	sorted, indices := s.executeWithIndices()
+	p := &Pipeline[T]{data: sorted, originalIndex: indices, typeCache: s.pipeline.typeCache}
 	return p.Skip(n)
 }
 
@@ -1084,17 +1165,33 @@ func (s *Sorter[T]) Collect() []T {
 }
 
 func (s *Sorter[T]) execute() []T {
+	result, _ := s.executeWithIndices()
+	return result
+}
+
+func (s *Sorter[T]) executeWithIndices() ([]T, []int) {
 	if len(s.sorts) == 0 {
-		return s.pipeline.data
+		return s.pipeline.data, s.pipeline.originalIndex
 	}
 
-	result := make([]T, len(s.pipeline.data))
+	n := len(s.pipeline.data)
+	result := make([]T, n)
 	copy(result, s.pipeline.data)
 
-	sort.Slice(result, func(i, j int) bool {
+	indices := make([]int, n)
+	copy(indices, s.pipeline.originalIndex)
+
+	// Create index array for sorting
+	sortIndices := make([]int, n)
+	for i := range sortIndices {
+		sortIndices[i] = i
+	}
+
+	// Sort the index array
+	sort.Slice(sortIndices, func(i, j int) bool {
 		for _, sf := range s.sorts {
-			vi := getFieldValue(result[i], sf.field)
-			vj := getFieldValue(result[j], sf.field)
+			vi := getFieldValue(result[sortIndices[i]], sf.field)
+			vj := getFieldValue(result[sortIndices[j]], sf.field)
 
 			cmp := compareValues(vi, vj)
 			if cmp != 0 {
@@ -1107,7 +1204,15 @@ func (s *Sorter[T]) execute() []T {
 		return false
 	})
 
-	return result
+	// Reorder result and indices based on sorted indices
+	sortedResult := make([]T, n)
+	sortedIndices := make([]int, n)
+	for i, idx := range sortIndices {
+		sortedResult[i] = result[idx]
+		sortedIndices[i] = indices[idx]
+	}
+
+	return sortedResult, sortedIndices
 }
 
 type SorterMap struct {
@@ -1389,4 +1494,3 @@ func valueKey(v any) any {
 	}
 	return v
 }
-

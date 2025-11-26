@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/mansoldof/plyGO"
+	plygo "github.com/mansoldof/plyGO"
 )
 
 type Employee struct {
@@ -34,7 +34,7 @@ func main() {
 		Where("Salary").GreaterThan(80000).
 		OrderBy("Salary").Desc().
 		Collect()
-	
+
 	for _, emp := range result1 {
 		fmt.Printf("  %s (%s): $%.0f\n", emp.Name, emp.Department, emp.Salary)
 	}
@@ -44,7 +44,7 @@ func main() {
 		Where("Active").IsTrue().
 		GroupBy("Department").
 		Avg("Salary")
-	
+
 	fmt.Println("  Average Salaries by Department:")
 	for dept, avg := range avgSalaries {
 		fmt.Printf("    %s: $%.2f\n", dept, avg)
@@ -54,7 +54,7 @@ func main() {
 	maxSalaries := plygo.From(employees).
 		GroupBy("Department").
 		Max("Salary")
-	
+
 	fmt.Println("  Highest Salaries by Department:")
 	for dept, max := range maxSalaries {
 		fmt.Printf("    %s: $%.0f\n", dept, max)
@@ -68,10 +68,10 @@ func main() {
 		ThenBy("Salary").Desc().
 		Select("Name", "Department", "YearsExp", "Salary").
 		Collect()
-	
+
 	fmt.Println("  Employees with 3-6 years experience:")
 	for _, emp := range result4 {
-		fmt.Printf("    %s (%s): %d years, $%.0f\n", 
+		fmt.Printf("    %s (%s): %d years, $%.0f\n",
 			emp["Name"], emp["Department"], emp["YearsExp"], emp["Salary"])
 	}
 
@@ -85,7 +85,7 @@ func main() {
 		}).
 		OrderBy("Salary").Desc().
 		Collect()
-	
+
 	fmt.Println("  After 15% raise (for active employees < $90k):")
 	for _, emp := range adjusted {
 		fmt.Printf("    %s: $%.2f\n", emp.Name, emp.Salary)
@@ -105,10 +105,10 @@ func main() {
 		).
 		OrderBy("Salary").Desc().
 		Collect()
-	
+
 	fmt.Println("  Engineers earning >$90k OR Sales with >5 years exp:")
 	for _, emp := range result6 {
-		fmt.Printf("    %s (%s): $%.0f, %d years\n", 
+		fmt.Printf("    %s (%s): $%.0f, %d years\n",
 			emp.Name, emp.Department, emp.Salary, emp.YearsExp)
 	}
 
@@ -118,19 +118,19 @@ func main() {
 		OrderBy("Salary").Desc().
 		Limit(3).
 		Collect()
-	
+
 	page2 := plygo.From(employees).
 		Where("Active").IsTrue().
 		OrderBy("Salary").Desc().
 		Skip(3).
 		Limit(3).
 		Collect()
-	
+
 	fmt.Println("  Page 1 (Top 3):")
 	for _, emp := range page1 {
 		fmt.Printf("    %s: $%.0f\n", emp.Name, emp.Salary)
 	}
-	
+
 	fmt.Println("  Page 2 (Next 3):")
 	for _, emp := range page2 {
 		fmt.Printf("    %s: $%.0f\n", emp.Name, emp.Salary)
@@ -141,7 +141,7 @@ func main() {
 		Where("Active").IsTrue().
 		GroupBy("Department").
 		Count()
-	
+
 	fmt.Println("  Active Employees per Department:")
 	for dept, count := range deptCounts {
 		fmt.Printf("    %s: %d employees\n", dept, count)
@@ -152,7 +152,7 @@ func main() {
 		Where("Name").StartsWith("A").
 		Or("Name").StartsWith("E").
 		Collect()
-	
+
 	fmt.Println("  Names starting with 'A' or 'E':")
 	for _, emp := range result9 {
 		fmt.Printf("    %s (%s)\n", emp.Name, emp.Department)
@@ -163,7 +163,7 @@ func main() {
 		Where("Active").IsTrue().
 		Distinct("Department").
 		Collect()
-	
+
 	fmt.Println("  Unique Active Departments:")
 	for _, emp := range unique {
 		fmt.Printf("    %s\n", emp.Department)

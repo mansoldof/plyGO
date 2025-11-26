@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/mansoldof/plyGO"
+	plygo "github.com/mansoldof/plyGO"
 )
 
 type Person struct {
