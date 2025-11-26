@@ -1,6 +1,5 @@
 # plygo
-
-A lightweight, type-safe data manipulation library for Go inspired by dplyr and R.
+Fluent, chainable, type-safe data manipulation for Go inspired by dplyr
 
 ## Features
 
